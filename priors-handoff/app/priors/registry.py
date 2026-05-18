@@ -24,8 +24,8 @@ Open design questions (see BACKLOG.md) intentionally left for later:
     exist for the same muscle;
   - whether higher-quality emphasis sources should dominate more aggressively
     than plain quality-weighted averaging.
-These do not block the registry: today every emphasis muscle/region has exactly
-one source (Maeo 2023), so combination is a passthrough.
+These do not block the registry: today every emphasis (exercise, muscle,
+region) KEY still has exactly one source, so combination is a passthrough.
 
 Run as a module for a summary:  python -m app.priors.registry
 """
@@ -37,6 +37,8 @@ from enum import Enum
 from .shared import (
     EffectEstimate,
     ExerciseEmphasis,
+    ExerciseInvolvement,
+    MechanisticEmphasis,
     UserProfile,
     combine_for_user,
     combine_emphasis_estimates,
@@ -44,7 +46,10 @@ from .shared import (
 from . import (
     pelland_2026, failure_effects, maeo_2023, varovic_2025, wolf_2023,
     schoenfeld_2017, kassiano_2023, pedrosa_2023, schoenfeld_load_2017,
+    maeo_2021, singer_2024, plotkin_2023, chaves_2020, exercise_involvement,
 )
+from .mechanistic import lats as mechanistic_lats
+from .mechanistic import deltoids as mechanistic_deltoids
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +81,13 @@ class Topic(str, Enum):
     ROM_STRENGTH = "rom->strength"
     MUSCLE_LENGTH_REGIONAL_HYPERTROPHY = "muscle_length->regional_hypertrophy"
     ARM_POSITION_HYPERTROPHY = "arm_position->hypertrophy"
+    REST_INTERVAL_HYPERTROPHY = "rest_interval->hypertrophy"
+    # Exercise-vs-exercise selection. Distinct from every dose/form topic
+    # above: those vary HOW you train and hold the exercise fixed; this varies
+    # WHICH exercise. Estimates here are between-exercise contrasts and may sit
+    # on per-paper raw scales (e.g. Plotkin 2023's raw-cm^2 CSA difference)
+    # that are deliberately not poolable with the SMD / %-per-set topics.
+    EXERCISE_SELECTION_HYPERTROPHY = "exercise_selection->hypertrophy"
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +109,8 @@ _EFFECT_INDEX: dict[Topic, list[EffectEstimate]] = {
     Topic.MUSCLE_LENGTH_REGIONAL_HYPERTROPHY: (varovic_2025.REGIONAL_ESTIMATES
                                                + pedrosa_2023.REGIONAL_ESTIMATES),
     Topic.ARM_POSITION_HYPERTROPHY: maeo_2023.WHOLE_MUSCLE_EFFECTS,
+    Topic.REST_INTERVAL_HYPERTROPHY: singer_2024.HYPERTROPHY_ESTIMATES,
+    Topic.EXERCISE_SELECTION_HYPERTROPHY: plotkin_2023.EXERCISE_SELECTION_ESTIMATES,
 }
 
 # Some topics carry estimates that should NOT all be pooled together because
@@ -126,6 +140,29 @@ _POOLABLE_OVERRIDE = {
     # inverse-variance pooled. The 1RM estimate is the poolable representative
     # — it is the strength outcome a progression model acts on.
     Topic.LOAD_STRENGTH: lambda: [schoenfeld_load_2017.LOAD_STRENGTH_1RM_HIGH_VS_LOW],
+    # rest_interval->hypertrophy carries Singer 2024's three region-keyed
+    # estimates (arm / thigh / whole body). The whole-body estimate points the
+    # OPPOSITE way (-0.08) to arm and thigh (+0.13 / +0.17) and rests on a
+    # different measurement construct (whole-body FFM, only 3 effect
+    # measurements). Inverse-variance pooling all three would manufacture a
+    # near-zero average representing none of them. The poolable set is arm +
+    # thigh; Singer's module owns that judgement via poolable_estimates().
+    # Whole body stays visible in effects() for inspection. See singer_2024.py.
+    Topic.REST_INTERVAL_HYPERTROPHY: singer_2024.poolable_estimates,
+    # exercise_selection->hypertrophy carries Plotkin 2023's seven
+    # between-exercise (hip thrust minus back squat) contrasts. They share one
+    # raw-cm^2 scale, so combine_inverse_variance would NOT raise -- but they
+    # are contrasts for SEVEN DIFFERENT muscles (three glute-max subregions,
+    # glute med+min, quadriceps, adductors, hamstrings). Pooling them would
+    # average unrelated muscles into a meaningless number. The poolable set is
+    # the three gluteus-maximus subregion contrasts only -- the paper's
+    # primary, homogeneous question (one muscle, three subregions). The thigh
+    # by-product contrasts stay visible in effects() for inspection. Even the
+    # glute-max subset is a single-RCT result on a raw-cm^2 scale shared with
+    # no other encoded estimate, so it never pools cross-paper. See
+    # plotkin_2023.py.
+    Topic.EXERCISE_SELECTION_HYPERTROPHY:
+        lambda: list(plotkin_2023.GLUTEUS_MAXIMUS_ESTIMATES),
 }
 
 # Recommended SE-inflation when a topic's poolable set spans overlapping
@@ -141,13 +178,62 @@ _OVERLAP_DEFAULT: dict[Topic, float] = {
 # The emphasis index — every ExerciseEmphasis, keyed (exercise, muscle, region)
 # ---------------------------------------------------------------------------
 
-_EMPHASIS_SOURCES = (maeo_2023, kassiano_2023)
+# Maeo 2021 contributes emphasis only (seated vs prone leg curl, hamstrings).
+# It is a Varovic 2025 constituent study, so it deliberately exports NO
+# Topic-keyed EffectEstimate and needs NO _POOLABLE_OVERRIDE entry: the emphasis
+# index is a separate path that never pools against Varovic's regional Topic.
+#
+# Chaves 2020 contributes emphasis only (incline vs horizontal vs combination
+# bench press, pectoralis major clavicular & sternocostal heads). It is an
+# exercise-vs-exercise SELECTION study mapping to no Topic, so -- like maeo_2021
+# -- it exports NO Topic-keyed EffectEstimate and needs NO _POOLABLE_OVERRIDE
+# entry; emphasis is routed through this separate index.
+_EMPHASIS_SOURCES = (maeo_2023, kassiano_2023, maeo_2021, plotkin_2023, chaves_2020)
 
 _EMPHASIS_INDEX: dict[tuple[str, str, str | None], list[ExerciseEmphasis]] = {}
 for _module in _EMPHASIS_SOURCES:
     for _e in _module.EMPHASIS_ESTIMATES:
         _EMPHASIS_INDEX.setdefault((_e.exercise, _e.muscle, _e.region), []).append(_e)
 del _module, _e
+
+
+# ---------------------------------------------------------------------------
+# The mechanistic index — DERIVED fallback exercise-selection priors
+# ---------------------------------------------------------------------------
+# A structurally separate index (ADR-010, proposed). It holds MechanisticEmphasis
+# objects — biomechanics-derived priors for muscles with no longitudinal
+# head-to-head trial (currently lats; deltoids next). It is NOT merged into
+# _EMPHASIS_INDEX and is NEVER pooled with measured ExerciseEmphasis: a
+# mechanistic prior is a fallback the optimizer reads only when measured
+# emphasis is absent for a (muscle, region). One entry per key by construction.
+_MECHANISTIC_SOURCES = (mechanistic_lats, mechanistic_deltoids)
+
+_MECHANISTIC_INDEX: dict[tuple[str, str, str | None], MechanisticEmphasis] = {}
+for _module in _MECHANISTIC_SOURCES:
+    for _m in _module.MECHANISTIC_EMPHASIS:
+        _key = (_m.exercise, _m.muscle, _m.region)
+        if _key in _MECHANISTIC_INDEX:
+            raise ValueError(f"duplicate mechanistic emphasis key: {_key}")
+        _MECHANISTIC_INDEX[_key] = _m
+del _module, _m, _key
+
+
+# ---------------------------------------------------------------------------
+# The involvement index — exercise -> muscle volume-accounting map (ADR-011)
+# ---------------------------------------------------------------------------
+# A THIRD index, separate from both _EMPHASIS_INDEX and _MECHANISTIC_INDEX. It
+# answers a cross-muscle question — "one set of exercise A, how much volume to
+# each muscle?" — not a within-muscle selection question. It is keyed
+# (exercise, muscle); one row per key by construction. set_credit() returns
+# None for an unknown pair (an explicit "flag for review"), so the silent-0.0
+# under-counting of pelland_2026.fractional_set_count() does not recur here.
+_INVOLVEMENT_INDEX: dict[tuple[str, str], ExerciseInvolvement] = {}
+for _r in exercise_involvement.EXERCISE_INVOLVEMENT:
+    _ikey = (_r.exercise, _r.muscle)
+    if _ikey in _INVOLVEMENT_INDEX:
+        raise ValueError(f"duplicate involvement key: {_ikey}")
+    _INVOLVEMENT_INDEX[_ikey] = _r
+del _r, _ikey
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +248,13 @@ _GUIDANCE_SOURCES = {
     "exercise selection / sub-muscle emphasis": maeo_2023,
     "calf training (range of motion)": kassiano_2023,
     "elbow flexor (range of motion / regional)": pedrosa_2023,
+    "hamstrings exercise selection (seated vs prone leg curl)": maeo_2021,
+    "inter-set rest interval": singer_2024,
+    "glute exercise selection (hip thrust vs back squat)": plotkin_2023,
+    "chest exercise selection (incline vs flat bench press)": chaves_2020,
+    "lat exercise selection (mechanistic fallback prior)": mechanistic_lats,
+    "deltoid exercise selection (mechanistic fallback prior)": mechanistic_deltoids,
+    "exercise -> muscle involvement (volume accounting)": exercise_involvement,
 }
 
 
@@ -250,6 +343,90 @@ def emphasis_for_muscle(
     return out
 
 
+def mechanistic_emphasis_for_muscle(
+    muscle: str, region: str | None = None,
+) -> dict[str, MechanisticEmphasis]:
+    """Map of exercise -> DERIVED mechanistic prior for a (muscle, region).
+
+    This is the fallback tier (ADR-010): biomechanics-derived, not measured,
+    and NOT pooled with measured `ExerciseEmphasis`. The optimizer should call
+    `emphasis_for_muscle()` first and consult this only when that returns
+    nothing. Use `selection_emphasis()` to get the right tier automatically."""
+    out: dict[str, MechanisticEmphasis] = {}
+    for (exercise, m, r), entry in _MECHANISTIC_INDEX.items():
+        if m == muscle and r == region:
+            out[exercise] = entry
+    return out
+
+
+def selection_emphasis(
+    muscle: str, region: str | None = None,
+) -> tuple[str, dict]:
+    """Exercise-selection priors for a (muscle, region), with the evidence tier
+    made explicit. Returns `(tier, mapping)`:
+
+      - `("measured", {exercise: ExerciseEmphasis})`   — a longitudinal trial
+        exists; the mechanistic fallback is NOT consulted.
+      - `("mechanistic", {exercise: MechanisticEmphasis})` — no measured
+        source; derived fallback prior (ADR-010).
+      - `("none", {})` — nothing encoded for this key.
+
+    The tier tag tells the caller which value type it holds and how much to
+    trust it; the two tiers are never mixed."""
+    measured = emphasis_for_muscle(muscle, region)
+    if measured:
+        return ("measured", measured)
+    mechanistic = mechanistic_emphasis_for_muscle(muscle, region)
+    if mechanistic:
+        return ("mechanistic", mechanistic)
+    return ("none", {})
+
+
+# ---------------------------------------------------------------------------
+# Involvement queries — cross-muscle volume accounting (ADR-011)
+# ---------------------------------------------------------------------------
+
+def involvement_for_exercise(exercise: str) -> list[ExerciseInvolvement]:
+    """Every muscle one exercise trains, each with its role and set credit.
+    Empty if the exercise is not in the involvement map."""
+    return [v for (ex, _m), v in _INVOLVEMENT_INDEX.items() if ex == exercise]
+
+
+def involvement_for_muscle(muscle: str) -> list[ExerciseInvolvement]:
+    """Every exercise that trains one muscle, each with its role and set
+    credit. This is what an optimizer reads to see where a muscle's weekly
+    volume is coming from. Empty if no encoded exercise trains the muscle."""
+    return [v for (_ex, m), v in _INVOLVEMENT_INDEX.items() if m == muscle]
+
+
+def set_credit(
+    exercise: str, muscle: str, outcome: str = "hypertrophy",
+) -> float | None:
+    """Fractional sets that one raw set of `exercise` credits to `muscle`
+    (ADR-011): 1.0 primary / 0.5 secondary / 0.0 stabiliser.
+
+    Returns None when the (exercise, muscle) pair is not in the map — an
+    explicit 'unknown, flag for review'. A 0.0 is a *known* stabiliser, never
+    a stand-in for 'unclassified'; this is the distinction
+    pelland_2026.fractional_set_count()'s silent 0.0 fallback could not make."""
+    row = _INVOLVEMENT_INDEX.get((exercise, muscle))
+    if row is None or outcome not in row.outcomes:
+        return None
+    return row.set_credit
+
+
+def fractional_set_count(
+    exercise: str, muscle: str, raw_sets: float, outcome: str = "hypertrophy",
+) -> float | None:
+    """`raw_sets` scaled by the (exercise, muscle) set credit — the per-muscle
+    weekly-volume contribution of an exercise. None when the pair is unknown
+    (see set_credit)."""
+    credit = set_credit(exercise, muscle, outcome)
+    if credit is None:
+        return None
+    return raw_sets * credit
+
+
 def guidance() -> dict[str, str]:
     """Plain-language optimizer guidance contributed by the paper modules
     (e.g. 'do not over-penalise partial ROM'). Keyed by subject area."""
@@ -270,6 +447,10 @@ if __name__ == "__main__":
     print(f"{len(all_topics())} topics, "
           f"{sum(len(v) for v in _EFFECT_INDEX.values())} effect estimates, "
           f"{sum(len(v) for v in _EMPHASIS_INDEX.values())} emphasis coefficients")
+    print(f"{len(_MECHANISTIC_INDEX)} mechanistic (fallback) emphasis priors "
+          f"— biomechanics-derived, never pooled with measured emphasis")
+    print(f"{len(_INVOLVEMENT_INDEX)} exercise->muscle involvement rows "
+          f"— cross-muscle volume accounting (ADR-011)")
     print()
     for topic in all_topics():
         full = effects(topic)

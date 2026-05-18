@@ -187,11 +187,15 @@ class EffectEstimate:
 #   exercise for that muscle?"
 #
 # Used by:
-#   - Fractional-set counting (Pelland 2026 framework): an indirect set counts
-#     for less. We extend this to per-muscle: a bench press counts for ~0.5 sets
-#     toward triceps but ~1.0 sets toward chest.
 #   - Exercise selection in the optimizer: when the user says "grow triceps long
-#     head", pick exercises whose long-head emphasis is highest.
+#     head", pick exercises whose long-head emphasis is highest. This is a
+#     WITHIN-muscle ranking — 1.0 is the best exercise FOR THAT MUSCLE.
+#
+# NOT for fractional-set / cross-muscle volume counting ("a bench press counts
+# ~0.5 sets toward triceps, ~1.0 toward chest"). That is a different question —
+# how much volume an exercise credits to EACH muscle it touches — and has its
+# own shape: ExerciseInvolvement (see ADR-011). Do not conflate the two.
+# Emphasis is within-muscle and relative; involvement is cross-muscle.
 #
 # Coefficients are on [0.0, 1.0]. 1.0 = the exercise that maximally stimulates
 # this muscle/region in the studied population. Values are RELATIVE within a
@@ -288,6 +292,156 @@ def _extract_emphasis_citations(estimates: list[ExerciseEmphasis]) -> list[Citat
         else:
             out.extend(e.source.sources)
     return out
+
+
+# ----------------------------------------------------------------------------
+# Mechanistic emphasis — a derived, fallback exercise-selection prior
+# ----------------------------------------------------------------------------
+# A SEPARATE shape from ExerciseEmphasis, and deliberately so. See
+# docs/priors/proposals/ADR-010-mechanistic-emphasis-priors.md.
+#
+# ExerciseEmphasis encodes a MEASURED per-exercise growth result from a
+# longitudinal trial. MechanisticEmphasis encodes a DERIVED prior for muscles
+# where no such trial exists (e.g. lats, deltoids — "literature-blocked" in
+# COVERAGE.md). It is built from biomechanics — does the exercise load the
+# muscle, and at what muscle length is it loaded hardest — weighted by the
+# layer's own encoded lengthened-position -> growth evidence. It is NOT
+# derived from EMG (EMG's error is directional bias, and it under-reads long
+# muscle lengths — exactly the signal this prior is built on).
+#
+# It is a FALLBACK: the optimizer uses it for a (muscle, region) only when no
+# measured ExerciseEmphasis exists. A measured source always supersedes it.
+#
+# Three structural guarantees stop a derived prior being mistaken for measured
+# evidence:
+#   1. Distinct type — combine_emphasis_estimates() accepts only
+#      ExerciseEmphasis, so a mechanistic prior can NEVER be pooled with
+#      measured data.
+#   2. confidence is capped at "low" (and may be "speculative").
+#   3. No `source: Citation` — provenance is a model; `grounded_in` names the
+#      encoded modules supplying the lengthened-position evidence.
+
+LoadedLength = Literal["long", "mid", "short"]
+
+
+@dataclass
+class MechanisticEmphasis:
+    """
+    A derived, biomechanics-based exercise-selection prior for one
+    (exercise, muscle, region) tuple — a fallback where no longitudinal
+    head-to-head trial exists. See ADR-010.
+
+    `emphasis` is a COARSE bucket, not a fitted value: it follows directly
+    from `loaded_length` (long -> high, mid -> moderate, short -> low). We do
+    not have a continuous "degree of stretch -> growth" curve and must not
+    imply one.
+    """
+    exercise: str                   # canonical exercise key
+    muscle: str                     # canonical muscle key
+    region: str | None              # sub-region, or None for whole muscle
+    emphasis: float                 # [0.0, 1.0] — a coarse bucket (see ADR-010)
+    loaded_length: LoadedLength     # muscle length at the HARDEST point of the
+                                    # exercise's resistance curve
+    confidence: str                 # "low" | "speculative" — hard ceiling; a
+                                    # derived prior is never "medium"/"high"
+    rationale: str                  # the biomechanical reasoning, explicit
+    grounded_in: tuple[str, ...]    # encoded module names supplying the
+                                    # lengthened-position -> growth evidence
+
+    def __post_init__(self):
+        if not 0.0 <= self.emphasis <= 1.0:
+            raise ValueError(f"emphasis must be in [0.0, 1.0], got {self.emphasis}")
+        if self.loaded_length not in ("long", "mid", "short"):
+            raise ValueError(
+                f"loaded_length must be long/mid/short, got {self.loaded_length}")
+        if self.confidence not in ("low", "speculative"):
+            raise ValueError(
+                "MechanisticEmphasis.confidence is capped at 'low' (or "
+                f"'speculative') — a derived prior is never higher; got "
+                f"{self.confidence}")
+        if not self.grounded_in:
+            raise ValueError(
+                "grounded_in must name at least one encoded evidence module")
+
+
+# ----------------------------------------------------------------------------
+# Exercise involvement — which muscles an exercise trains, and how much
+# ----------------------------------------------------------------------------
+# A THIRD shape, distinct from both emphasis shapes. See
+# docs/priors/proposals/ADR-011-exercise-involvement-map.md.
+#
+# The emphasis shapes (ExerciseEmphasis, MechanisticEmphasis) answer a
+# WITHIN-muscle question: "for muscle M, which exercise — or which sub-region —
+# trains it best?" ExerciseInvolvement answers a CROSS-muscle question: "one set
+# of exercise A — how much training volume does it credit to EACH muscle it
+# touches?" That is volume bookkeeping, not selection. The two never mix.
+#
+# `role` is uncontested anatomy: a muscle is a prime mover, an assisting
+# synergist, or an isometric stabiliser of the exercise. `set_credit` maps role
+# to a fractional-set weight via ROLE_SET_CREDIT — Pelland 2026's direct=1.0 /
+# indirect=0.5 fractional-counting methodology (Sec. 2.5), which the paper
+# applied to BOTH its hypertrophy and its strength volume regressions (the
+# strength slope is on the `pct_per_fractional_set` scale). A stabiliser banks
+# no hypertrophy volume -> 0.0.
+
+InvolvementRole = Literal["primary", "secondary", "stabilizer"]
+InvolvementBasis = Literal["pelland_2026_table1", "biomechanical"]
+OutcomeKind = Literal["hypertrophy", "strength"]
+
+# role -> fractional set credit. The ONLY place the direct/indirect weighting
+# lives; a row never carries its own number. Revise here if a dedicated
+# fractional-/effective-set paper is ever encoded.
+ROLE_SET_CREDIT: dict[str, float] = {
+    "primary": 1.0,      # direct work — Pelland 2026 direct weight
+    "secondary": 0.5,    # indirect work — Pelland 2026 indirect heuristic
+    "stabilizer": 0.0,   # isometric stabilisation — no hypertrophy credit
+}
+
+
+@dataclass(frozen=True)
+class ExerciseInvolvement:
+    """
+    One (exercise, muscle) involvement row: the role a muscle plays in an
+    exercise, and — via ROLE_SET_CREDIT — the fractional training volume that
+    one set of the exercise credits to that muscle. See ADR-011.
+
+    `set_credit` is DERIVED from `role`, never stored, so the crediting
+    heuristic lives in exactly one constant (ROLE_SET_CREDIT).
+
+    `outcomes` defaults to both hypertrophy and strength: the role is anatomy
+    and does not change with training goal. It narrows only if Pelland's
+    separate strength classification (Table 2) is ever encoded and shows a
+    genuine strength-specific reclassification.
+    """
+    exercise: str                   # canonical exercise key
+    muscle: str                     # canonical muscle key
+    role: InvolvementRole           # prime mover / synergist / stabiliser
+    basis: InvolvementBasis         # how the role was determined
+    rationale: str                  # the anatomical reasoning, explicit
+    outcomes: tuple[OutcomeKind, ...] = ("hypertrophy", "strength")
+
+    def __post_init__(self):
+        if self.role not in ("primary", "secondary", "stabilizer"):
+            raise ValueError(
+                f"role must be primary/secondary/stabilizer, got {self.role}")
+        if self.basis not in ("pelland_2026_table1", "biomechanical"):
+            raise ValueError(
+                "basis must be pelland_2026_table1/biomechanical, got "
+                f"{self.basis}")
+        if not self.outcomes:
+            raise ValueError("outcomes must name at least one outcome")
+        for o in self.outcomes:
+            if o not in ("hypertrophy", "strength"):
+                raise ValueError(f"outcome must be hypertrophy/strength, got {o}")
+        if not self.rationale:
+            raise ValueError("rationale must be non-empty")
+
+    @property
+    def set_credit(self) -> float:
+        """Fractional sets that one raw set of this exercise credits to this
+        muscle — Pelland 2026 fractional counting (direct 1.0 / indirect 0.5;
+        a stabiliser banks 0.0)."""
+        return ROLE_SET_CREDIT[self.role]
 
 
 # ----------------------------------------------------------------------------

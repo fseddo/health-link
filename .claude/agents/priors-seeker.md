@@ -46,9 +46,15 @@ Sort every paper you find into one of three buckets:
 3. **Out of scope** — not resistance training for hypertrophy/strength at all.
    Discard; do not record.
 
-For each, prefer the strongest evidence available:
-- Meta-analyses and systematic reviews, then well-controlled longitudinal RCTs
-  (>=6 weeks, direct hypertrophy measures — MRI/CT/ultrasound — or proper 1RM).
+For each, prefer the strongest evidence available — but **the evidence
+hierarchy depends on the question type**:
+- For **dose/programming questions** (volume, frequency, load, failure, rest):
+  meta-analyses and systematic reviews first, then well-controlled longitudinal
+  RCTs (>=6 weeks, direct hypertrophy measures — MRI/CT/ultrasound — or proper
+  1RM). These questions genuinely pool across studies.
+- For **exercise-selection questions**: a head-to-head exercise-vs-exercise
+  longitudinal RCT outranks a meta-analysis — see "Exercise-selection hunts"
+  below for why, and what to filter on.
 - AVOID: acute / EMG-activation-only studies (activation predicts long-term
   hypertrophy poorly), case studies, narrative reviews, and anything not about
   resistance-training prescription for hypertrophy/strength.
@@ -56,6 +62,45 @@ For each, prefer the strongest evidence available:
 
 Search with WebSearch; use WebFetch to read abstracts and confirm a paper is
 real, longitudinal, and on-topic. Capture each candidate's citation and DOI.
+
+# Exercise-selection hunts
+
+When the target is an **exercise-selection** gap (COVERAGE.md §2 — "what
+exercise trains muscle X best"), the evidence rules differ from
+dose/programming hunts:
+
+1. **The target shape is a head-to-head comparison.** You want a longitudinal
+   RCT that trained **exercise A vs exercise B** (or execution variant A vs B)
+   and measured per-muscle hypertrophy directly (MRI/CT/ultrasound). The
+   strongest design is **within-subject / contralateral-limb** (each limb does
+   a different exercise) — this is what the layer's best selection modules are
+   built on (Maeo 2023 triceps, Maeo 2021 hamstrings, Kassiano 2023 calves).
+   Such a paper outranks any meta-analysis for a selection gap.
+
+2. **A "muscle-X hypertrophy meta-analysis" is usually NOT a selection paper.**
+   Most such meta-analyses pool a generic *resistance-training-vs-baseline*
+   effect ("does training grow this muscle" — yes, uninteresting) and never
+   compute an exercise-vs-exercise contrast. Before shortlisting one, confirm
+   from the abstract that it actually pools a **per-exercise or per-variant
+   comparison**. If it does not, it is NOT a priority candidate — park it as
+   deferred at most. (Lesson: Krause Neto 2025, a glute hypertrophy MA, was
+   shortlisted, then rejected downstream because it carried no per-exercise
+   data — a wasted pipeline cycle. Apply this filter at the seeker stage.)
+
+3. **Hunt at sub-muscle granularity.** COVERAGE.md §2 names the heads/regions
+   that matter per muscle (clavicular vs sternocostal pec, the three deltoid
+   heads, the four quad heads). Search at that level — e.g. "incline vs flat
+   bench press pectoralis hypertrophy", not just "chest exercises" — and state
+   which sub-region a candidate informs.
+
+4. **Fallback for EMG-dominated muscles.** Some muscles (chest, lats/mid-back)
+   have a literature dominated by acute EMG-activation studies, which are
+   excluded. Do not force a weak candidate in. Instead, search specifically for
+   the known longitudinal comparison designs (incline-vs-flat press,
+   pulldown-vs-row, etc.); if nothing of acceptable quality exists, report the
+   gap as **genuinely unfillable for now** rather than shortlisting a weak
+   paper — and say so, so the orchestrator knows the gap is blocked on the
+   literature, not on seeker effort.
 
 # Output
 

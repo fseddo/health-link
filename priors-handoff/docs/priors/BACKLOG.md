@@ -3,23 +3,30 @@
 The forward-looking working file for the literature priors system. Read this
 first when starting a new session.
 
-**Current state** (2026-05-17 — see `SESSION_LOG.md` Session 4):
+**Current state** (2026-05-18 — see `SESSION_LOG.md` Session 6):
 
-11 papers across 9 modules, every one independently audited (audit docs in
-`docs/priors/audits/`). `registry.py` is the app-facing query layer — 12
-topics, 30 effect estimates, 12 emphasis coefficients. 140 tests in
-`tests/priors/`. Everything is uncommitted; the layer is not yet integrated
-into the repo proper (still `app/`-structured under `priors-handoff/`).
+15 papers across 13 modules, every one independently audited (audit docs in
+`docs/priors/audits/`). `registry.py` is the app-facing query layer — 14
+topics, 40 effect estimates, 30 emphasis coefficients. A separate mechanistic
+fallback tier (ADR-010) adds 26 biomechanics-derived priors for the
+literature-blocked latissimus dorsi (17) and deltoids (9), each independently
+audited by the `priors-mechanistic-auditor`. A THIRD shape — `ExerciseInvolvement`
+(ADR-011, `app/priors/exercise_involvement.py`) — is the cross-muscle
+volume-accounting map: 74 `(exercise, muscle)` rows for the 16 lat/deltoid
+exercises, role → fractional set credit, audited by the new
+`priors-involvement-auditor`. 244 tests in `tests/priors/`. Everything is
+uncommitted; the layer is not yet integrated into the repo proper (still
+`app/`-structured under `priors-handoff/`).
 
 `COVERAGE.md` is the authoritative map of what is covered and what the gaps
 are — read it for what to encode next. New papers are added via the 4-agent
 pipeline (`.claude/agents/priors-*.md`): seeker → relevance-checker →
 entry-maker → auditor, with an independent audit as a mandatory gate.
 
-NOTE: the "papers to encode next" tiers further down are partly stale —
-Tier-1 (Schoenfeld 2017 volume, Kassiano 2023, Pedrosa 2023, Schoenfeld 2017
-rep-range/load) is largely done; Pedrosa 2022 is blocked (paywall). Trust
-`COVERAGE.md` over those tiers.
+NOTE: the "papers to encode next" tiers further down are now largely stale —
+trust `COVERAGE.md` §3 (priority gaps) over them. Current priority is
+exercise-selection evidence for the remaining big muscle groups; lats and
+deltoids are now covered by the mechanistic fallback tier (ADR-010).
 
 ## Encoded papers (with module file and quality score)
 
@@ -36,17 +43,48 @@ rep-range/load) is largely done; Pedrosa 2022 is blocked (paywall). Trust
 | Kassiano et al. 2023 | `kassiano_2023.py` | 0.78 | Gastrocnemius calf-raise ROM. ExerciseEmphasis. |
 | Pedrosa et al. 2023 | `pedrosa_2023.py` | 0.83 | Elbow-flexor regional hypertrophy. |
 | Schoenfeld/Grgic 2017 | `schoenfeld_load_2017.py` | 0.77 | Low- vs high-load MA. |
+| Maeo et al. 2021 | `maeo_2021.py` | 0.88 | Hamstrings: seated vs prone leg curl. ExerciseEmphasis. |
+| Singer et al. 2024 | `singer_2024.py` | 0.77 | Inter-set rest interval → hypertrophy MA. |
+| Plotkin et al. 2023 | `plotkin_2023.py` | 0.875 | Hip thrust vs back squat, gluteus maximus. New `EXERCISE_SELECTION_HYPERTROPHY` topic. |
+| Chaves et al. 2020 | `chaves_2020.py` | 0.79 | Incline vs flat bench press, pectoralis major. ExerciseEmphasis. |
 
-## Infrastructure additions in last session
+## Infrastructure — the data shapes in `shared.py`
 
-Extended `shared.py` with:
-- `ExerciseEmphasis` dataclass — per-(exercise, muscle, region) emphasis
-  coefficients, distinct from scalar `EffectEstimate`
-- `combine_emphasis_estimates()` — quality-weighted averaging (NOT inverse
-  variance) for emphasis values
+- `EffectEstimate` — scalar quantitative findings; pooled via inverse variance.
+- `ExerciseEmphasis` — per-(exercise, muscle, region) emphasis coefficients
+  from MEASURED longitudinal data; combined via `combine_emphasis_estimates()`
+  (quality-weighted averaging, NOT inverse variance — different scale from SMDs).
+- `MechanisticEmphasis` (ADR-010) — DERIVED biomechanics-based fallback priors
+  for `literature-blocked` muscles; a distinct type that structurally cannot
+  pool with measured emphasis. Lives in `app/priors/mechanistic/`.
+- `ExerciseInvolvement` (ADR-011) — the CROSS-muscle volume-accounting map: per
+  `(exercise, muscle)`, a `role` (primary/secondary/stabilizer) → a fractional
+  set credit via `ROLE_SET_CREDIT` (1.0/0.5/0.0, Pelland 2026's direct/indirect
+  counting). Distinct from both emphasis shapes — it answers "how much volume
+  to each muscle", not "which exercise is best for a muscle". Lives in
+  `app/priors/exercise_involvement.py`.
 
-These exist because emphasis coefficients aren't on the same scale as SMDs
-and shouldn't be combined the same way.
+## Exercise-catalogue build-out — ADR-012 (PROPOSED)
+
+The involvement map is a 16-exercise prototype. Scaling it to a full exercise
+library is specified in **`proposals/ADR-012-exercise-catalogue-and-trust-rubric.md`**
+(PROPOSED, 2026-05-18 — awaiting review). It decides: a canonical exercise
+catalogue; a computed **per-exercise trust score** (rubric →
+`EXERCISE_TRUST_RUBRIC.md`); the `free-exercise-db` open dataset as spine with
+Hevy/Strong name reconciliation; a new `catalogue-seeker → involvement-encoder
+→ priors-involvement-auditor` pipeline (the literature pipeline untouched);
+staged one movement pattern at a time. Build starts once ADR-012 is accepted.
+
+Audit follow-ups from `exercise_involvement_audit.md` (all MINOR, folded into
+the ADR-012 build-out):
+- Add muscle keys for `supraspinatus` / external rotators / `serratus_anterior`
+  so raises, flies and pullovers can be fully scored (consider a `stabilizer`
+  serratus row on the pullover as honest documentation).
+- Reconcile exercise-key strings with Pelland Table 1 (`barbell_row` vs
+  `bent_over_barbell_row`, `overhead_press` vs `shoulder_press`) so legitimate
+  Pelland corroboration can be claimed via `basis="pelland_2026_table1"`.
+- Unify the deltoid sub-muscle taxonomy: involvement keys the heads as
+  `anterior_deltoid` etc.; the mechanistic tier uses `deltoids` + `region`.
 
 ## Important conceptual clarifications surfaced during data sourcing
 
@@ -78,23 +116,21 @@ These should land in ADRs eventually but live here in the meantime:
 
 ## Backlog: papers to encode next (priority order)
 
-### Tier 1 — strongly needed
+### Tier 1 — current priority (exercise selection)
 
-- **Schoenfeld, Ogborn, Krieger 2017** — the classic volume dose-response MA.
-  Will combine with Pelland 2026 to demonstrate overlap-adjusted pooling on
-  volume. Expected to confirm directionally; estimate similar magnitudes.
+The earlier Tier-1 papers (Schoenfeld/Ogborn/Krieger 2017 volume, Kassiano
+2023, Schoenfeld/Grgic 2017 load) are all DONE — see the encoded-papers table.
+Current priorities, ranked per `COVERAGE.md` §3:
 
-- **Kassiano 2023 calf raise study** — already cited in the
-  regional-hypertrophy infrastructure work. Direct evidence for lengthened
-  partials specifically in gastrocnemius. Encode as: ExerciseEmphasis for
-  lengthened-partial calf raise vs full ROM vs shortened-partial.
-
-- **Pedrosa et al. 2022** on partial ROM in elbow flexors — analogous to
-  Kassiano but for biceps. Cited in Wolf and Varovic.
-
-- **Schoenfeld 2017 (rep range MA)** — load and rep-range effects on
-  hypertrophy vs strength. Needed before progression model can recommend
-  rep ranges based on goal.
+- **Quads exercise selection** — Kassiano 2026 (back squat vs leg extension)
+  and Grgic 2018 (frequency→strength) are shortlisted but BLOCKED on paywalls;
+  Pedrosa 2022 (knee-extensor ROM) likewise blocked. Need full-text access.
+- **Chest sub-region selection** — Chaves 2020 covers incline-vs-flat; decline
+  press and adduction-biased "inner chest" work are unaddressed.
+- **Smaller muscle groups** — traps, erectors, forearms, abs, brachialis, hip
+  adductors/abductors, soleus, tibialis anterior, serratus (see COVERAGE §2).
+- **Strengthen the THIN dose topics** — volume→strength, frequency, and load
+  each rest on a single source.
 
 ### Tier 2 — useful
 
@@ -103,11 +139,6 @@ These should land in ADRs eventually but live here in the meantime:
 
 - **Currier et al. 2023** — newer network meta-analysis combining strength
   and hypertrophy. Useful for cross-validation.
-
-- **Maeo 2021 (hamstrings)** — same lab as Maeo 2023, same design but on
-  hamstrings. Direct emphasis-coefficient extraction for seated vs lying
-  leg curl. Extends triceps pattern to a second muscle group, validating
-  the infrastructure works generally.
 
 - **Maeo 2024 or later updates** — Maeo's lab has continued this line of
   work. Check for newer publications on quads, deltoids, or other muscles.
@@ -159,6 +190,13 @@ These should land in ADRs eventually but live here in the meantime:
    deadlifts, lengthened position cable flies) lack direct hypertrophy
    data but theoretical reasoning predicts emphasis. Resist adding
    speculation; wait for direct data.
+   **UPDATE 2026-05-17:** RESOLVED — ADR-010
+   (`proposals/ADR-010-mechanistic-emphasis-priors.md`, ACCEPTED) added a
+   separate, hard-confidence-capped `MechanisticEmphasis` tier (biomechanics +
+   the encoded lengthened-position evidence; NOT EMG) as a fallback prior for
+   `literature-blocked` muscles. The lats prototype is built
+   (`app/priors/mechanistic/lats.py`, 17 priors, regional entries kept
+   `speculative`); deltoids are the next candidate muscle.
 
 3. **Cross-paper emphasis normalization.** Maeo's overhead extension is
    normalized to 1.0. When we add Kassiano's lengthened calf raise (also a
@@ -176,9 +214,11 @@ These should land in ADRs eventually but live here in the meantime:
 
 - `APPLICABILITY_RUBRIC.md` (docs the population-matching weights)
 - `docs/priors/README.md` (developer guide for adding new papers)
-- Three new ADRs (priors as code; pooling method; quality rubric)
-- Unit tests in `tests/priors/`
-- Registry layer (`registry.py`)
+- ADRs 007-009 (priors as code; pooling method; quality rubric) — to write
+  into the repo's `docs/DECISIONS.md` at integration. ADR-010 (mechanistic
+  tier) is already written under `proposals/`.
+- ~~Unit tests in `tests/priors/`~~ — DONE (228 tests).
+- ~~Registry layer (`registry.py`)~~ — DONE.
 
 ## How to use this file
 

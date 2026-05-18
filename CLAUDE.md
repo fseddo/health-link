@@ -105,15 +105,19 @@ Current phase: **Phase 1 — Foundation**.
 
 A literature-priors layer — peer-reviewed research encoded as structured
 Python priors for the recommendation engine/optimizer — is in active
-development in the **untracked `priors-handoff/`** directory. It is Phase 2
-work built ahead and is not yet integrated into the repo proper.
+development in the **`priors-handoff/`** directory. It is Phase 2 work built
+ahead and is not yet integrated into the repo proper; all work since the
+initial commit is uncommitted.
 
 If working on it, read the live state docs first:
 `priors-handoff/docs/priors/BACKLOG.md` (current state + next steps),
 `COVERAGE.md` (coverage + gaps), `SESSION_LOG.md` (history). New papers are
 added through the agent pipeline in `.claude/agents/priors-*.md`
 (seeker → relevance-checker → entry-maker → auditor; an independent audit is a
-mandatory gate). See also the `project-priors-layer` memory.
+mandatory gate). A separate mechanistic fallback tier (ADR-010,
+`priors-handoff/app/priors/mechanistic/`) supplies biomechanics-derived priors
+for muscles with no head-to-head trial, gated by the
+`priors-mechanistic-auditor`. See also the `project-priors-layer` memory.
 
 ## Asking for help
 
