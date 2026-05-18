@@ -20,7 +20,23 @@ Run these git commands to gather the scope. Run them in parallel:
 - `git diff --name-only HEAD` (or `git diff --name-only <base>`) — list of changed files
 - `git log --oneline HEAD~1..HEAD` (or `git log --oneline <base>..HEAD`) — commit subjects in scope
 
-If the diff is empty (nothing to review), stop and tell the user there's nothing in scope. Do not invoke any sub-agents.
+### Edge case: root commit (no parent)
+
+If `HEAD` has no parent — verify with `git rev-parse HEAD~1` (it errors out with "unknown revision") — `HEAD~1..HEAD` doesn't resolve and the default scope falls back to "uncommitted + the entire content of the root commit." In that case:
+
+- Get the diff with `git show HEAD --pretty=format:""` or `git diff $(git hash-object -t tree /dev/null) HEAD` (either produces the full content of every file in the root commit, formatted as a diff against nothing).
+- Save the diff to a temp file (e.g. `/tmp/dual-review-diff.patch`) and reference it in the sub-agent prompt, since a root commit's diff is essentially "every file's full content" and may be large.
+- The list-of-files command becomes `git diff-tree --no-commit-id --name-only -r HEAD`.
+- The log command becomes `git log --oneline -1`.
+- Tell the sub-agents explicitly that this is a root commit so they don't try to compare against a parent that doesn't exist.
+
+### If the scope is empty
+
+If there are no uncommitted changes AND no commits in the requested range, stop and tell the user there's nothing in scope. Do not invoke any sub-agents.
+
+### Scaffolding / docs-only commits
+
+If the diff is entirely documentation, configuration, and tooling (no production source code or migrations), pass a note to the sub-agents: this is a docs/scaffolding commit, so the "missing tests is a blocker" rule does not fire. The reviewer agent's prompt has guidance on this — but stating it explicitly in the orchestrator prompt avoids relying on the sub-agent to detect it.
 
 ## Step 2 — First pass: code-reviewer agent
 

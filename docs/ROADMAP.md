@@ -6,6 +6,7 @@ Phased build plan. Each phase has a definition of done. Don't start a phase unti
 
 | Phase | Focus | Approx. duration |
 |---|---|---|
+| 0 | Scaffolding: rule docs, schema draft, review tooling | complete |
 | 1 | Foundation: backend + minimal web frontend | 1–2 weeks |
 | 1.5 | Synthetic HealthKit data generator | ~3 days |
 | 2 | Classical ML: progression suggestions | 2 weeks |
@@ -16,6 +17,21 @@ Phased build plan. Each phase has a definition of done. Don't start a phase unti
 | 7 | Diet tracking + reminders | TBD |
 
 The iOS port is intentionally placed at Phase 3 rather than later. Rationale: HealthKit data is structurally central to the ML in Phases 4–5, and the developer wants to use the app personally. Phases 1 and 2 establish the ML loop using mocked HealthKit data; Phase 3 swaps the mock for real HealthKit before the coaching and recovery models go deep.
+
+---
+
+## Phase 0 — Scaffolding (complete)
+
+**Goal**: Repository and documentation in shape before any code lands. No source code yet.
+
+- [x] Root `CLAUDE.md` with project-wide rules, conventions, locked decisions
+- [x] Per-component `backend/CLAUDE.md` and `frontend/CLAUDE.md` with overarching rules specific to each
+- [x] `docs/ROADMAP.md` (this file), `docs/SCHEMA.md` (database schema draft), `docs/DECISIONS.md` (ADR-001 … ADR-007)
+- [x] `.gitignore` covering Python (uv, pytest, mypy), Node, OS, IDE, ML artifacts
+- [x] `/dual-review` project-local slash command with `code-reviewer` and `code-review-auditor` sub-agents at `.claude/`
+- [x] `backend/docs/` and `frontend/docs/` README placeholders describing what each folder will contain
+
+**Definition of done**: A new contributor can clone the repo, read `CLAUDE.md` + the three top-level docs, and understand what the project is, what's already decided, and how Phase 1 will be evaluated — without reading any code. ✅
 
 ---
 
@@ -250,7 +266,6 @@ Notification logic, goal-setting, integration with workouts (pre/post workout nu
 
 ## Cross-cutting future work (not yet scheduled)
 
-- Workout routines/templates
 - Sharing workouts
 - Multi-device sync conflict resolution
 - Production deployment hardening (HTTPS, rate limiting, audit logging)

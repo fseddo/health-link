@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp \"/Users/francesco/.claude/projects/-Users-francesco-Documents-development-health-link/b650b549-34dc-45fb-b383-868ce3af21fa/tool-results/webfetch-1779051915707-qxzg2y.pdf\" maeo2023.pdf)",
+      "Bash(python3 -c ' *)",
+      "Bash(ls -la maeo_text.txt)"
+    ]
+  }
+}

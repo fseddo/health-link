@@ -50,10 +50,10 @@ The evaluation discipline matters more than the models. Every ML feature must sh
 - Never store derived "display values" alongside canonical values.
 
 ### Soft delete
-- Soft delete on user-generated parents: users, workouts, soreness_reports, nutrition_entries, body_measurements.
-- Children filter via JOIN to parent's `deleted_at`.
+- Soft delete applies to **user-generated journal/event data**: users, workouts, soreness_reports, nutrition_entries, body_measurements.
+- Children of those parents filter via JOIN to parent's `deleted_at`.
 - Default queries exclude soft-deleted rows.
-- Reference data (exercises, muscle_groups) uses hard delete (effectively immutable).
+- **Reference data uses hard delete with FK-restrict**, not soft delete. This includes `muscle_groups` (seeded, effectively immutable) and `exercises` (both built-in and user-customised). A custom exercise that has been used in any workout cannot be deleted — the FK constraint blocks it and the API returns 409. See ADR-002 and `docs/SCHEMA.md` `exercises` "Deletion" for full rationale.
 
 ### IDs
 - All primary keys are UUIDs.
@@ -100,6 +100,20 @@ The iOS port lands at Phase 3, before the deeper ML work, because HealthKit data
 See `docs/ROADMAP.md` for the full phase plan.
 
 Current phase: **Phase 1 — Foundation**.
+
+## Literature priors layer
+
+A literature-priors layer — peer-reviewed research encoded as structured
+Python priors for the recommendation engine/optimizer — is in active
+development in the **untracked `priors-handoff/`** directory. It is Phase 2
+work built ahead and is not yet integrated into the repo proper.
+
+If working on it, read the live state docs first:
+`priors-handoff/docs/priors/BACKLOG.md` (current state + next steps),
+`COVERAGE.md` (coverage + gaps), `SESSION_LOG.md` (history). New papers are
+added through the agent pipeline in `.claude/agents/priors-*.md`
+(seeker → relevance-checker → entry-maker → auditor; an independent audit is a
+mandatory gate). See also the `project-priors-layer` memory.
 
 ## Asking for help
 

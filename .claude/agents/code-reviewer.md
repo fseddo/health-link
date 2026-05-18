@@ -38,6 +38,7 @@ Go through the diff and check, in order:
 3. **Schema discipline (`docs/SCHEMA.md`).** Any new column / table / index / constraint in code must match what `docs/SCHEMA.md` says — and if the change extends the schema, `docs/SCHEMA.md` must be updated *in the same diff*.
 
 4. **Tests as we go.** Every behavior change in production code must have a corresponding test change in the same diff. New endpoint → endpoint test. New model invariant → model test. New service function → service test. Refactor with no behavior change → unchanged tests still pass is enough (note this in the review). **Missing tests for new behavior is a blocker.**
+   - **Carve-out:** if the diff is entirely documentation, configuration, tooling, scaffolding, or generated code (no production source under `backend/app/` or `backend/ml/`, no new migration, no frontend logic), the tests requirement does not apply — there is no behavior to test. Say so explicitly in the review ("no tests required: docs/tooling change") instead of silently skipping the rule.
 
 5. **Docs as we go.** If the change introduces a new architectural decision, pattern, endpoint, or feature: the relevant doc must be updated in the same diff. The mapping:
    - New endpoint or auth/permission change → `backend/docs/` (e.g. `auth.md`, `api.md`, etc.)
@@ -47,6 +48,7 @@ Go through the diff and check, in order:
    - New frontend pattern (state, query, routing convention) → `frontend/docs/`
    - New roadmap milestone reached → check off in `docs/ROADMAP.md`
    **Missing doc update for a change that warrants one is a blocker.**
+   - **Carve-out:** doc-only commits trivially satisfy this rule. Don't manufacture a "missing docs" blocker on a commit whose entire purpose was to update docs.
 
 6. **Stack conventions.** SQLAlchemy 2.0 declarative style (no legacy ORM patterns); Pydantic v2 (no v1 idioms); FastAPI dependency injection rather than module-level globals; async DB sessions where the rest of the codebase is async. Inconsistency with surrounding code is an **issue** (not necessarily a blocker).
 

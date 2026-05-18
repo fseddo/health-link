@@ -20,7 +20,9 @@ When you change auth, the DB layer, an API convention, or a backend-specific arc
 
 ## Expected files (added as we build them)
 
-- `database.md` — async session management, migration workflow, transactional patterns
-- `auth.md` — JWT structure, refresh-token rotation, password policy
-- `api-conventions.md` — error format, pagination shape, idempotency rules
-- `testing.md` — pytest fixtures, factories, async client patterns
+These are **placeholders, not yet authored** — they will be created in the checkpoint that introduces the feature they document. If you grep for one of these filenames and don't find it, that's expected: it hasn't been written yet.
+
+- `database.md` — async session management, migration workflow, transactional patterns (Checkpoint 3)
+- `auth.md` — JWT structure, refresh-token rotation, password policy (Checkpoint 5)
+- `api-conventions.md` — error format, pagination shape, idempotency rules (Checkpoint 6)
+- `testing.md` — pytest fixtures, factories, async client patterns (Checkpoint 2)

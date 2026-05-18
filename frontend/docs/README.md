@@ -21,6 +21,8 @@ When you change the auth flow, query patterns, or the codegen workflow, update t
 
 ## Expected files (added as we build them)
 
-- `api-codegen.md` — how to regenerate types from backend OpenAPI
-- `query-patterns.md` — TanStack Query conventions
-- `auth-flow.md` — login, refresh, logout
+These are **placeholders, not yet authored** — they will be created in the checkpoint that introduces the feature they document. If you grep for one of these filenames and don't find it, that's expected: it hasn't been written yet.
+
+- `api-codegen.md` — how to regenerate types from backend OpenAPI (Checkpoint 8)
+- `query-patterns.md` — TanStack Query conventions (Checkpoint 8–9)
+- `auth-flow.md` — login, refresh, logout (Checkpoint 9)

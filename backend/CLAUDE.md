@@ -76,7 +76,9 @@ Keep this layout. Files added in non-obvious places should be flagged in the PR 
 
 ## Dependencies
 
-- Adding a dependency to `pyproject.toml` requires a one-line justification in the commit message. If the dep replaces something we already have, say so. **No LangChain, no LiteLLM, no LLM framework abstractions** — see ADR-003.
+- Adding a dependency to `pyproject.toml` requires a one-line justification in the commit message. If the dep replaces something we already have, say so.
+- **No LangChain** — explicitly ruled out by ADR-003 (`docs/DECISIONS.md`). The rationale is that abstractions hide the mechanics, and learning the mechanics is the project's primary goal.
+- **Other LLM framework abstractions** (LiteLLM, LlamaIndex, Haystack, etc.) are not blanket-banned but require a new ADR before adding, because they trip the same "hide the mechanics" concern. The Phase 4 LLM-provider ADR will likely settle this question once a provider is chosen — until then, default to raw provider SDKs.
 - Pin Python to 3.12+ in `pyproject.toml`. Pin major versions of runtime deps; let minor/patch float.
 
 ## Backend docs (`backend/docs/`)
